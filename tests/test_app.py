@@ -2,7 +2,7 @@ import pytest
 import os
 os.environ["DATABASE_NAME"] = "hackathon_db"
 os.environ["DATABASE_HOST"] = "localhost"
-os.environ["DATABASE_PORT"] = "5433"
+os.environ["DATABASE_PORT"] = os.environ.get("DATABASE_PORT", "5433")
 os.environ["DATABASE_USER"] = "postgres"
 os.environ["DATABASE_PASSWORD"] = "postgres"
 
