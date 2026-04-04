@@ -1,192 +1,170 @@
-# MLH PE Hackathon — Flask + Peewee + PostgreSQL Template
+# MLH PE Hackathon — URL Shortener
 
-A minimal hackathon starter template. You get the scaffolding and database wiring — you build the models, routes, and CSV loading logic.
+A production-grade URL shortener built with Flask, PostgreSQL, and Peewee ORM. Built for the MLH Production Engineering Hackathon.
 
-**Stack:** Flask · Peewee ORM · PostgreSQL · uv
+## Stack
 
-## **Important**
+- **Backend:** Flask + Peewee ORM
+- **Database:** PostgreSQL
+- **Testing:** pytest + pytest-cov
+- **CI:** GitHub Actions
+- **Package Manager:** uv
 
-You need to work with around the seed files that you can find in [MLH PE Hackathon](https://mlh-pe-hackathon.com) platform. This will help you build the schema for the database and have some data to do some testing and submit your project for judging. If you need help with this, reach out on Discord or on the Q&A tab on the platform.
+## Architecture
 
-## Prerequisites
-
-- **uv** — a fast Python package manager that handles Python versions, virtual environments, and dependencies automatically.
-  Install it with:
-  ```bash
-  # macOS / Linux
-  curl -LsSf https://astral.sh/uv/install.sh | sh
-
-  # Windows (PowerShell)
-  powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-  ```
-  For other methods see the [uv installation docs](https://docs.astral.sh/uv/getting-started/installation/).
-- PostgreSQL running locally (you can use Docker or a local instance)
-
-## uv Basics
-
-`uv` manages your Python version, virtual environment, and dependencies automatically — no manual `python -m venv` needed.
-
-| Command | What it does |
-|---------|--------------|
-| `uv sync` | Install all dependencies (creates `.venv` automatically) |
-| `uv run <script>` | Run a script using the project's virtual environment |
-| `uv add <package>` | Add a new dependency |
-| `uv remove <package>` | Remove a dependency |
+```
+User → Flask App → PostgreSQL
+                 → Events Log
+```
 
 ## Quick Start
 
-```bash
-# 1. Clone the repo
-git clone <repo-url> && cd mlh-pe-hackathon
+**Prerequisites:** Docker Desktop, Python 3.11+, uv
 
-# 2. Install dependencies
+```bash
+# 1. Clone
+git clone https://github.com/YahyaMohamed3/MLH---PE-Hackathon.git
+cd MLH---PE-Hackathon
+
+# 2. Install uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# 3. Install dependencies
 uv sync
 
-# 3. Create the database
-createdb hackathon_db
+# 4. Start PostgreSQL
+docker run --name hackathon-db \
+  -e POSTGRES_USER=postgres \
+  -e POSTGRES_PASSWORD=postgres \
+  -e POSTGRES_DB=hackathon_db \
+  -p 5433:5432 -d postgres
 
-# 4. Configure environment
-cp .env.example .env   # edit if your DB credentials differ
+# 5. Configure environment
+cp .env.example .env  # edit if needed
 
-# 5. Run the server
+# 6. Seed the database
+uv run seed.py
+
+# 7. Run the server
 uv run run.py
-
-# 6. Verify
-curl http://localhost:5000/health
-# → {"status":"ok"}
 ```
 
-## Project Structure
+Visit `http://localhost:5000/health` — you should see `{"status": "ok"}`.
 
-```
-mlh-pe-hackathon/
-├── app/
-│   ├── __init__.py          # App factory (create_app)
-│   ├── database.py          # DatabaseProxy, BaseModel, connection hooks
-│   ├── models/
-│   │   └── __init__.py      # Import your models here
-│   └── routes/
-│       └── __init__.py      # register_routes() — add blueprints here
-├── .env.example             # DB connection template
-├── .gitignore               # Python + uv gitignore
-├── .python-version          # Pin Python version for uv
-├── pyproject.toml           # Project metadata + dependencies
-├── run.py                   # Entry point: uv run run.py
-└── README.md
-```
+## API Endpoints
 
-## How to Add a Model
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/health` | Health check |
+| POST | `/shorten` | Create a short URL |
+| GET | `/<short_code>` | Redirect to original URL |
+| GET | `/urls` | List all URLs |
+| GET | `/urls/<id>` | Get a specific URL |
+| DELETE | `/urls/<id>` | Deactivate a URL |
+| GET | `/stats/<short_code>` | Get click stats for a URL |
+| GET | `/users` | List all users |
+| GET | `/users/<id>` | Get a specific user |
 
-1. Create a file in `app/models/`, e.g. `app/models/product.py`:
+### POST /shorten
 
-```python
-from peewee import CharField, DecimalField, IntegerField
-
-from app.database import BaseModel
-
-
-class Product(BaseModel):
-    name = CharField()
-    category = CharField()
-    price = DecimalField(decimal_places=2)
-    stock = IntegerField()
+**Request:**
+```json
+{
+  "original_url": "https://example.com",
+  "title": "Example Site",
+  "user_id": 1
+}
 ```
 
-2. Import it in `app/models/__init__.py`:
-
-```python
-from app.models.product import Product
+**Response (201):**
+```json
+{
+  "id": 1,
+  "short_code": "abc123",
+  "original_url": "https://example.com",
+  "title": "Example Site",
+  "is_active": true,
+  "created_at": "2026-04-04T00:00:00"
+}
 ```
 
-3. Create the table (run once in a Python shell or a setup script):
+**Error responses:**
+- `400` — missing or invalid URL
+- `404` — user_id not found
 
-```python
-from app.database import db
-from app.models.product import Product
+### GET /<short_code>
 
-db.create_tables([Product])
+- `302` — redirects to original URL
+- `404` — short code not found
+- `410` — URL has been deactivated
+
+## Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DATABASE_NAME` | `hackathon_db` | PostgreSQL database name |
+| `DATABASE_HOST` | `localhost` | Database host |
+| `DATABASE_PORT` | `5432` | Database port |
+| `DATABASE_USER` | `postgres` | Database user |
+| `DATABASE_PASSWORD` | `postgres` | Database password |
+| `FLASK_DEBUG` | `true` | Enable debug mode |
+
+## Running Tests
+
+```bash
+# Run all tests
+uv run pytest tests/ -v
+
+# Run with coverage report
+uv run pytest tests/ --cov=app --cov-report=term-missing
 ```
 
-## How to Add Routes
+Current coverage: **99%** (165 statements, 2 missed)
 
-1. Create a blueprint in `app/routes/`, e.g. `app/routes/products.py`:
+## CI/CD
 
-```python
-from flask import Blueprint, jsonify
-from playhouse.shortcuts import model_to_dict
+GitHub Actions runs on every push:
+1. Spins up a PostgreSQL service container
+2. Installs dependencies via uv
+3. Runs all 23 tests
+4. Enforces 70% minimum coverage
+5. Blocks merge if any test fails
 
-from app.models.product import Product
+## Error Handling
 
-products_bp = Blueprint("products", __name__)
+| Scenario | Response |
+|----------|----------|
+| Missing `original_url` | `400 {"error": "original_url is required"}` |
+| Invalid URL format | `400 {"error": "original_url must start with http:// or https://"}` |
+| Non-JSON request body | `400 {"error": "Request body must be JSON"}` |
+| Short code not found | `404 {"error": "Short code '...' not found"}` |
+| Deactivated URL | `410 {"error": "This link has been deactivated"}` |
+| User not found | `404 {"error": "User ... not found"}` |
 
+All errors return JSON — no stack traces exposed to users.
 
-@products_bp.route("/products")
-def list_products():
-    products = Product.select()
-    return jsonify([model_to_dict(p) for p in products])
-```
+## Troubleshooting
 
-2. Register it in `app/routes/__init__.py`:
+**`password authentication failed for user "postgres"`**
+- A local PostgreSQL may be running on port 5432. We use port 5433 to avoid conflicts.
+- Run: `docker run ... -p 5433:5432 -d postgres`
 
-```python
-def register_routes(app):
-    from app.routes.products import products_bp
-    app.register_blueprint(products_bp)
-```
+**`uv: command not found`**
+- Run: `source $HOME/.local/bin/env`
+- Or restart your terminal after installing uv.
 
-## How to Load CSV Data
+**`duplicate key value violates unique constraint`**
+- The DB sequence is out of sync after seeding with explicit IDs.
+- Fix: `docker exec -it hackathon-db psql -U postgres -d hackathon_db -c "SELECT setval('urls_id_seq', (SELECT MAX(id) FROM urls));"`
 
-```python
-import csv
-from peewee import chunked
-from app.database import db
-from app.models.product import Product
+## Decision Log
 
-def load_csv(filepath):
-    with open(filepath, newline="") as f:
-        reader = csv.DictReader(f)
-        rows = list(reader)
-
-    with db.atomic():
-        for batch in chunked(rows, 100):
-            Product.insert_many(batch).execute()
-```
-
-## Useful Peewee Patterns
-
-```python
-from peewee import fn
-from playhouse.shortcuts import model_to_dict
-
-# Select all
-products = Product.select()
-
-# Filter
-cheap = Product.select().where(Product.price < 10)
-
-# Get by ID
-p = Product.get_by_id(1)
-
-# Create
-Product.create(name="Widget", category="Tools", price=9.99, stock=50)
-
-# Convert to dict (great for JSON responses)
-model_to_dict(p)
-
-# Aggregations
-avg_price = Product.select(fn.AVG(Product.price)).scalar()
-total = Product.select(fn.SUM(Product.stock)).scalar()
-
-# Group by
-from peewee import fn
-query = (Product
-         .select(Product.category, fn.COUNT(Product.id).alias("count"))
-         .group_by(Product.category))
-```
-
-## Tips
-
-- Use `model_to_dict` from `playhouse.shortcuts` to convert model instances to dictionaries for JSON responses.
-- Wrap bulk inserts in `db.atomic()` for transactional safety and performance.
-- The template uses `teardown_appcontext` for connection cleanup, so connections are closed even when requests fail.
-- Check `.env.example` for all available configuration options.
+| Decision | Why |
+|----------|-----|
+| Flask | Lightweight, minimal boilerplate, matches template |
+| Peewee ORM | Simple, lightweight ORM that fits the template's existing setup |
+| PostgreSQL | Reliable, production-grade relational DB with strong consistency |
+| No FK constraints in DB | Seed data had referential inconsistencies; integrity enforced at app layer instead |
+| pytest | Industry standard, integrates well with Flask test client |
+| uv | Fast dependency management, handles Python versions automatically |
+| Port 5433 locally | Avoids conflict with any existing local PostgreSQL on 5432 |
