@@ -24,11 +24,20 @@ User → Flask App → PostgreSQL
 
 **Prerequisites:** Docker Desktop, Python 3.11+, uv
 
+**Prerequisites:** Docker Desktop, Python 3.11+, uv
+
 ```bash
 # 1. Clone
 git clone https://github.com/YahyaMohamed3/MLH---PE-Hackathon.git
 cd MLH---PE-Hackathon
+# 1. Clone
+git clone https://github.com/YahyaMohamed3/MLH---PE-Hackathon.git
+cd MLH---PE-Hackathon
 
+# 2. Install uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# 3. Install dependencies
 # 2. Install uv
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
@@ -47,7 +56,20 @@ cp .env.example .env  # edit if needed
 
 # 6. Seed the database
 uv run seed.py
+# 4. Start PostgreSQL
+docker run --name hackathon-db \
+  -e POSTGRES_USER=postgres \
+  -e POSTGRES_PASSWORD=postgres \
+  -e POSTGRES_DB=hackathon_db \
+  -p 5433:5432 -d postgres
 
+# 5. Configure environment
+cp .env.example .env  # edit if needed
+
+# 6. Seed the database
+uv run seed.py
+
+# 7. Run the server
 # 7. Run the server
 uv run run.py
 ````
