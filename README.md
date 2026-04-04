@@ -255,5 +255,3 @@ Scaling plan:
 | uv                      | Fast dependency management, handles Python versions automatically                  |
 | Port 5433 locally       | Avoids conflict with any existing local PostgreSQL on 5432                         |
 
-```
-```
