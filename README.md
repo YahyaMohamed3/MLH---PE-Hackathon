@@ -1,30 +1,20 @@
-Here is your **FULL updated README** with:
-
-* ✅ Observability (Bronze) added
-* ✅ 200 VUs test added
-* ❌ Nothing else touched unless needed
-
----
-
-```md
 # MLH PE Hackathon — URL Shortener
 
 A production-grade URL shortener built with Flask, PostgreSQL, and Peewee ORM. Built for the MLH Production Engineering Hackathon.
 
 ## Stack
 
-- **Backend:** Flask + Peewee ORM + Gunicorn
-- **Database:** PostgreSQL
-- **Cache:** Redis
-- **Load Balancer:** Nginx
-- **Testing:** pytest + pytest-cov
-- **CI:** GitHub Actions
-- **Package Manager:** uv
+* **Backend:** Flask + Peewee ORM + Gunicorn
+* **Database:** PostgreSQL
+* **Cache:** Redis
+* **Load Balancer:** Nginx
+* **Testing:** pytest + pytest-cov
+* **CI:** GitHub Actions
+* **Package Manager:** uv
 
 ## Architecture
 
 ```
-
 User → Nginx (Load Balancer)
 ↓
 Flask App (Gunicorn, multiple instances)
@@ -32,8 +22,7 @@ Flask App (Gunicorn, multiple instances)
 Redis (Cache) + PostgreSQL (Database)
 ↓
 Events Log
-
-````
+```
 
 ## Quick Start
 
@@ -65,7 +54,7 @@ uv run seed.py
 
 # 7. Run the server
 uv run run.py
-````
+```
 
 Visit `http://localhost:5000/health` — you should see `{"status": "ok"}`.
 
@@ -319,3 +308,63 @@ Returns:
 ### Observability — Metrics Endpoint
 
 ![Metrics Endpoint](docs/images/observability/metrics-endpoint.png)
+
+<!-- ====================== ADDED SECTION (NO REMOVALS) ====================== -->
+
+## Incident Response — Gold (Runbooks)
+
+### Service Down
+
+**Symptoms**
+
+* /health fails
+* Alerts triggered in Discord
+
+**Steps**
+
+```bash
+docker ps
+docker compose up -d
+curl http://localhost:5001/health
+```
+
+---
+
+### High CPU Usage
+
+**Symptoms**
+
+* CPU > 90%
+* Increased latency
+
+**Steps**
+
+```bash
+curl http://localhost:5001/metrics
+docker compose restart app1 app2
+```
+
+---
+
+### High Error Rate
+
+**Symptoms**
+
+* 5xx responses
+* Failed requests
+
+**Steps**
+
+```bash
+docker logs app-instance-1
+docker compose restart
+```
+
+---
+
+## Additional Capacity Notes
+
+* 200 VUs confirmed 0% failure
+* 500 VUs maintained <5% error rate requirement
+* System stable under sustained concurrent load
+
