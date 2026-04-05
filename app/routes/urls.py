@@ -199,9 +199,9 @@ def urls_collection():
             return jsonify({"error": "is_active must be true or false"}), 400
         query = query.where(URL.is_active == is_active)
 
-    # Added pagination to match users.py perfectly
-    page = parse_int(request.args.get("page"), default=None)
-    per_page = parse_int(request.args.get("per_page"), default=None)
+
+    page = parse_int(request.args.get("page"))
+    per_page = parse_int(request.args.get("per_page"))
 
     if page is not None or per_page is not None:
         if page is None or per_page is None:
