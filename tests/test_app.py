@@ -18,9 +18,13 @@ def app():
     app = create_app()
     app.config["TESTING"] = True
     with app.app_context():
+        # 1. Drop existing tables to ensure a clean slate for EVERY test
+        db.drop_tables([Event, URL, User], safe=True) 
+        # 2. Recreate fresh tables
         db.create_tables([User, URL, Event], safe=True)
         yield app
-
+        # 3. Clean up after the test finishes
+        db.drop_tables([Event, URL, User], safe=True)
 
 @pytest.fixture
 def client(app):
