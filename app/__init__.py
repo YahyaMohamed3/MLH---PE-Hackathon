@@ -3,7 +3,7 @@ from flask import Flask, jsonify, Response
 import os
 import psutil
 
-from app.database import init_db
+from app.database import create_tables, init_db
 from app.routes import register_routes
 
 from prometheus_client import (
@@ -36,7 +36,21 @@ def create_app():
 
     from app import models  # noqa: F401
 
+    create_tables()
+
     register_routes(app)
+
+    @app.errorhandler(404)
+    def handle_404(e):
+        return jsonify({"error": "Not found"}), 404
+
+    @app.errorhandler(405)
+    def handle_405(e):
+        return jsonify({"error": "Method not allowed"}), 405
+
+    @app.errorhandler(500)
+    def handle_500(e):
+        return jsonify({"error": "Internal server error"}), 500
 
     @app.before_request
     def before_request():

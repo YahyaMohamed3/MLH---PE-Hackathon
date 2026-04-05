@@ -1,0 +1,47 @@
+## 1. Show system running
+
+```bash
+docker ps
+```
+
+## 2. Health check
+
+```bash
+curl --max-time 3 http://localhost:5001/health
+```
+
+## 3. Graceful failure (bad input)
+
+```bash
+curl -X POST http://localhost:5001/shorten \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+
+## 4. Chaos test (kill → auto-restart)
+
+```bash
+docker exec app-instance-1 sh -c 'kill -9 1'
+docker ps
+```
+
+
+## 5. Trigger alert (break system)
+
+```bash
+docker stop app-instance-1 app-instance-2
+```
+
+## 6. Recovery
+
+```bash
+docker start app-instance-1 app-instance-2
+curl --max-time 3 http://localhost:5001/health
+```
+
+## 7. Metrics (observability proof)
+
+```bash
+curl --max-time 3 http://localhost:5001/metrics
+
