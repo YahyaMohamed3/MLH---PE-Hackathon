@@ -185,8 +185,7 @@ def load_users_bulk():
             "message": "bulk load complete",
             "file": file_name,
             "row_count": processed_count,
-            "created_count": 0,
-            "imported_count": 0,
+            "imported": 0,
         }), 201
 
     rows_to_insert = []
@@ -225,6 +224,5 @@ def load_users_bulk():
         "message": "bulk load complete",
         "file": file_name,
         "row_count": processed_count,
-        "created_count": imported_count,
-        "imported_count": imported_count,
+        "imported": imported_count,
     }), 201

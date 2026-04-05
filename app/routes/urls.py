@@ -123,7 +123,7 @@ def create_url_record(original_url, title=None, user_id=None):
             return {"error": f"User {resolved_user_id} not found"}, 404
 
     short_code = generate_short_code()
-    now = datetime.datetime.utcnow()
+    now = datetime.datetime.now(datetime.timezone.utc)
 
     try:
         url = URL.create(
@@ -156,7 +156,7 @@ def create_url_record(original_url, title=None, user_id=None):
 
 @urls_bp.route("/shorten", methods=["POST"])
 def shorten_url():
-    data = request.get_json(silent=True)
+    data = request.get_json(silent=True, force=True)
     if not isinstance(data, dict):
         return jsonify({"error": "request body must be a JSON object"}), 400
 
@@ -171,7 +171,7 @@ def shorten_url():
 @urls_bp.route("/urls", methods=["GET", "POST"])
 def urls_collection():
     if request.method == "POST":
-        data = request.get_json(silent=True)
+        data = request.get_json(silent=True, force=True)
         if not isinstance(data, dict):
             return jsonify({"error": "request body must be a JSON object"}), 400
 
@@ -199,8 +199,20 @@ def urls_collection():
             return jsonify({"error": "is_active must be true or false"}), 400
         query = query.where(URL.is_active == is_active)
 
-    urls = query.limit(100)
-    return jsonify([url_to_dict(u) for u in urls]), 200
+    # Added pagination to match users.py perfectly
+    page = parse_int(request.args.get("page"), default=None)
+    per_page = parse_int(request.args.get("per_page"), default=None)
+
+    if page is not None or per_page is not None:
+        if page is None or per_page is None:
+            return jsonify({"error": "page and per_page must both be provided"}), 400
+        if page < 1 or per_page < 1:
+            return jsonify({"error": "page and per_page must be positive integers"}), 400
+        query = query.paginate(page, per_page)
+    else:
+        query = query.limit(100)
+
+    return jsonify([url_to_dict(u) for u in query]), 200
 
 
 @urls_bp.route("/urls/<int:url_id>", methods=["GET", "PUT", "DELETE"])
@@ -213,16 +225,16 @@ def url_detail(url_id):
         return jsonify(url_to_dict(url)), 200
 
     if request.method == "PUT":
-        data = request.get_json(silent=True)
+        data = request.get_json(silent=True, force=True)
         if not isinstance(data, dict):
             return jsonify({"error": "request body must be a JSON object"}), 400
 
         original_url = data.get("original_url")
         title = data.get("title")
         is_active = data.get("is_active")
-        user_id = data.get("user_id")
 
-        if all(field is None for field in [original_url, title, is_active, user_id]):
+        # Handled JSON null values natively
+        if original_url is None and title is None and is_active is None and "user_id" not in data:
             return jsonify({"error": "at least one updatable field is required"}), 400
 
         old_is_active = url.is_active
@@ -246,11 +258,12 @@ def url_detail(url_id):
                 is_active = parsed
             url.is_active = is_active
 
-        if user_id is not None:
-            if user_id == "":
+        if "user_id" in data:
+            u_val = data["user_id"]
+            if u_val is None or str(u_val).strip() == "":
                 url.user_id = None
             else:
-                resolved_user_id = parse_int(user_id)
+                resolved_user_id = parse_int(u_val)
                 if resolved_user_id is None:
                     return jsonify({"error": "user_id must be an integer"}), 400
 
@@ -259,7 +272,7 @@ def url_detail(url_id):
                     return jsonify({"error": f"User {resolved_user_id} not found"}), 404
                 url.user_id = resolved_user_id
 
-        url.updated_at = datetime.datetime.utcnow()
+        url.updated_at = datetime.datetime.now(datetime.timezone.utc)
 
         try:
             url.save()
@@ -274,7 +287,7 @@ def url_detail(url_id):
             url_id=url.id,
             user_id=url.user_id,
             event_type=event_type,
-            timestamp=datetime.datetime.utcnow(),
+            timestamp=datetime.datetime.now(datetime.timezone.utc),
             details=json.dumps({
                 "title": url.title,
                 "is_active": url.is_active,
@@ -287,14 +300,14 @@ def url_detail(url_id):
 
     URL.update(
         is_active=False,
-        updated_at=datetime.datetime.utcnow()
+        updated_at=datetime.datetime.now(datetime.timezone.utc)
     ).where(URL.id == url_id).execute()
 
     Event.create(
         url_id=url.id,
         user_id=url.user_id,
         event_type="deactivated",
-        timestamp=datetime.datetime.utcnow(),
+        timestamp=datetime.datetime.now(datetime.timezone.utc),
         details=json.dumps({"short_code": url.short_code}),
     )
 
@@ -315,15 +328,15 @@ def redirect_url(short_code):
 
         URL.update(
             click_count=URL.click_count + 1,
-            updated_at=datetime.datetime.utcnow()
+            updated_at=datetime.datetime.now(datetime.timezone.utc)
         ).where(URL.short_code == short_code).execute()
 
         Event.create(
             url_id=cached["id"],
             user_id=cached.get("user_id"),
             event_type="click",
-            timestamp=datetime.datetime.utcnow(),
-            details=json.dumps({"short_code": short_code, "source": "cache"}),
+            timestamp=datetime.datetime.now(datetime.timezone.utc),
+            details=json.dumps({"short_code": short_code}),  # Fixed strict schema error here
         )
         return redirect(cached["original_url"], code=302)
 
@@ -343,14 +356,14 @@ def redirect_url(short_code):
 
     URL.update(
         click_count=URL.click_count + 1,
-        updated_at=datetime.datetime.utcnow()
+        updated_at=datetime.datetime.now(datetime.timezone.utc)
     ).where(URL.id == url.id).execute()
 
     Event.create(
         url_id=url.id,
         user_id=url.user_id,
         event_type="click",
-        timestamp=datetime.datetime.utcnow(),
+        timestamp=datetime.datetime.now(datetime.timezone.utc),
         details=json.dumps({"short_code": short_code}),
     )
 
