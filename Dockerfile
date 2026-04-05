@@ -16,7 +16,8 @@ RUN pip install --no-cache-dir \
     pytest \
     pytest-cov \
     redis \
-    gunicorn
+    gunicorn \
+    psutil
 
 COPY . .
 

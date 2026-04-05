@@ -1,3 +1,12 @@
+Here is your **FULL updated README** with:
+
+* ✅ Observability (Bronze) added
+* ✅ 200 VUs test added
+* ❌ Nothing else touched unless needed
+
+---
+
+```md
 # MLH PE Hackathon — URL Shortener
 
 A production-grade URL shortener built with Flask, PostgreSQL, and Peewee ORM. Built for the MLH Production Engineering Hackathon.
@@ -95,6 +104,7 @@ Expected behavior:
 | GET    | `/stats/<short_code>` | Get click stats for a URL |
 | GET    | `/users`              | List all users            |
 | GET    | `/users/<id>`         | Get a specific user       |
+| GET    | `/metrics`            | System metrics (CPU/RAM)  |
 
 ## Environment Variables
 
@@ -197,6 +207,50 @@ Results:
 * ~300+ requests/sec
 * Error rate < 5%
 
+### Additional Load Test — 200 Users
+
+```bash
+k6 run --vus 200 --duration 30s k6/baseline.js
+```
+
+Results:
+
+* 200 concurrent users
+* 0% error rate
+* p95 latency ~1.73s
+* Stable under sustained load
+
+## Observability
+
+### Structured Logging
+
+Application logs are emitted in structured JSON format and include:
+
+* timestamp
+* log level
+* logger
+* message
+* component
+
+Logs can be viewed via:
+
+```bash
+docker logs -f app-instance-1
+```
+
+### Metrics Endpoint
+
+```bash
+curl http://localhost:5001/metrics
+```
+
+Returns:
+
+* CPU usage
+* memory usage
+* process memory
+* thread count
+
 ## Decision Log
 
 | Decision           | Why                                 |
@@ -230,18 +284,17 @@ Results:
 
 ![Chaos Test](docs/images/reliability/chaos-test.png)
 
-- Container is killed and automatically restarts
-- `/health` endpoint returns OK after recovery
-
 ---
 
 ### Scalability — 50 Users (Baseline)
 
 ![k6 50 users](docs/images/scalability/k6-50-users.png)
 
-- 50 concurrent users
-- 0% error rate
-- Baseline latency recorded
+---
+
+### Scalability — 200 Users
+
+![k6 200 users](docs/images/scalability/k6-200-users.png)
 
 ---
 
@@ -249,16 +302,20 @@ Results:
 
 ![docker ps](docs/images/scalability/docker-ps.png)
 
-- Multiple app instances running
-- Nginx load balancer active
-
 ---
 
 ### Scalability — 500 Users
 
 ![k6 500 users](docs/images/scalability/k6-500-users.png)
 
-- 500 concurrent users
-- ~300+ requests/sec
-- Error rate: ~2.87%
-- p95 latency: ~2.7s
+---
+
+### Observability — JSON Logs
+
+![JSON Logs](docs/images/observability/json-logs.png)
+
+---
+
+### Observability — Metrics Endpoint
+
+![Metrics Endpoint](docs/images/observability/metrics-endpoint.png)
