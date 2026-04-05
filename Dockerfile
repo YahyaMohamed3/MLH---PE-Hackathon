@@ -16,8 +16,9 @@ RUN pip install --no-cache-dir \
     pytest \
     pytest-cov \
     redis \
-    gunicorn \
-    psutil
+    psutil \
+    prometheus-client \
+    gunicorn
 
 COPY . .
 
