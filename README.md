@@ -252,66 +252,7 @@ Returns:
 | Redis              | Reduce DB load via caching          |
 | Horizontal scaling | Improve throughput                  |
 
-## Troubleshooting
-
-**duplicate key value violates unique constraint**
-
-* Retry logic handles collisions
-
-**connection refused at startup**
-
-* Wait for services to be ready before load testing
-
-**slow responses under load**
-
-* Ensure Redis cache is working
-* Verify multiple Gunicorn workers
-
-## Verification Evidence
-
-### Reliability — Chaos Test
-
-![Chaos Test](docs/images/reliability/chaos-test.png)
-
----
-
-### Scalability — 50 Users (Baseline)
-
-![k6 50 users](docs/images/scalability/k6-50-users.png)
-
----
-
-### Scalability — 200 Users
-
-![k6 200 users](docs/images/scalability/k6-200-users.png)
-
----
-
-### Scalability — Infrastructure
-
-![docker ps](docs/images/scalability/docker-ps.png)
-
----
-
-### Scalability — 500 Users
-
-![k6 500 users](docs/images/scalability/k6-500-users.png)
-
----
-
-### Observability — JSON Logs
-
-![JSON Logs](docs/images/observability/json-logs.png)
-
----
-
-### Observability — Metrics Endpoint
-
-![Metrics Endpoint](docs/images/observability/metrics-endpoint.png)
-
-<!-- ====================== ADDED SECTION (NO REMOVALS) ====================== -->
-
-## Incident Response — Gold (Runbooks)
+## Incident Response 
 
 ### Service Down
 
@@ -368,3 +309,60 @@ docker compose restart
 * 500 VUs maintained <5% error rate requirement
 * System stable under sustained concurrent load
 
+
+## Troubleshooting
+
+**duplicate key value violates unique constraint**
+
+* Retry logic handles collisions
+
+**connection refused at startup**
+
+* Wait for services to be ready before load testing
+
+**slow responses under load**
+
+* Ensure Redis cache is working
+* Verify multiple Gunicorn workers
+
+## Verification Evidence
+
+### Reliability — Chaos Test
+
+![Chaos Test](docs/images/reliability/chaos-test.png)
+
+---
+
+### Scalability — 50 Users (Baseline)
+
+![k6 50 users](docs/images/scalability/k6-50-users.png)
+
+---
+
+### Scalability — 200 Users
+
+![k6 200 users](docs/images/scalability/k6-200-users.png)
+
+---
+
+### Scalability — Infrastructure
+
+![docker ps](docs/images/scalability/docker-ps.png)
+
+---
+
+### Scalability — 500 Users
+
+![k6 500 users](docs/images/scalability/k6-500-users.png)
+
+---
+
+### Observability — JSON Logs
+
+![JSON Logs](docs/images/observability/json-logs.png)
+
+---
+
+### Observability — Metrics Endpoint
+
+![Metrics Endpoint](docs/images/observability/metrics-endpoint.png)
