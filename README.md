@@ -1,12 +1,3 @@
-Here is your **FULL updated README** with:
-
-* ✅ Observability (Bronze) added
-* ✅ 200 VUs test added
-* ❌ Nothing else touched unless needed
-
----
-
-```md
 # MLH PE Hackathon — URL Shortener
 
 A production-grade URL shortener built with Flask, PostgreSQL, and Peewee ORM. Built for the MLH Production Engineering Hackathon.
