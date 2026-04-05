@@ -1,7 +1,11 @@
+import csv
+import os
+
 from flask import Blueprint, jsonify, request
 from peewee import IntegrityError
 
 from app.models.user import User
+from app.database import db
 
 users_bp = Blueprint("users", __name__)
 
@@ -15,23 +19,83 @@ def user_to_dict(user):
     }
 
 
+def _project_root():
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+
+
+def _csv_path(filename):
+    return os.path.join(_project_root(), filename)
+
+
+def _parse_int(value, default=None):
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _normalize_text(value):
+    return str(value or "").strip()
+
+
+def _load_csv_users(file_name, limit=None):
+    path = _csv_path(file_name)
+    if not os.path.exists(path):
+        return None, f"file '{file_name}' not found"
+
+    rows = []
+    seen_pairs = set()
+
+    with open(path, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            username = _normalize_text(row.get("username"))
+            email = _normalize_text(row.get("email"))
+
+            if not username or not email:
+                continue
+
+            key = (username, email)
+            if key in seen_pairs:
+                continue
+            seen_pairs.add(key)
+
+            rows.append({
+                "username": username,
+                "email": email,
+            })
+
+            if limit is not None and len(rows) >= limit:
+                break
+
+    return rows, None
+
+
 @users_bp.route("/users", methods=["GET", "POST"])
 def users_collection():
     if request.method == "GET":
-        page = request.args.get("page", type=int)
-        per_page = request.args.get("per_page", type=int)
+        page = _parse_int(request.args.get("page"), default=None)
+        per_page = _parse_int(request.args.get("per_page"), default=None)
 
         query = User.select().order_by(User.id)
 
-        if page and per_page:
+        if page is not None or per_page is not None:
+            if page is None or per_page is None:
+                return jsonify({"error": "page and per_page must both be provided"}), 400
+            if page < 1 or per_page < 1:
+                return jsonify({"error": "page and per_page must be positive integers"}), 400
             query = query.paginate(page, per_page)
 
-        users = [user_to_dict(u) for u in query]
-        return jsonify(users), 200
+        return jsonify([user_to_dict(u) for u in query]), 200
 
-    data = request.get_json(silent=True) or {}
-    username = (data.get("username") or "").strip()
-    email = (data.get("email") or "").strip()
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "request body must be a JSON object"}), 400
+
+    username = _normalize_text(data.get("username"))
+    email = _normalize_text(data.get("email"))
 
     if not username or not email:
         return jsonify({"error": "username and email are required"}), 400
@@ -53,19 +117,24 @@ def user_detail(user_id):
         return jsonify(user_to_dict(user)), 200
 
     if request.method == "PUT":
-        data = request.get_json(silent=True) or {}
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({"error": "request body must be a JSON object"}), 400
 
         username = data.get("username")
         email = data.get("email")
 
+        if username is None and email is None:
+            return jsonify({"error": "at least one of username or email is required"}), 400
+
         if username is not None:
-            username = username.strip()
+            username = _normalize_text(username)
             if not username:
                 return jsonify({"error": "username cannot be empty"}), 400
             user.username = username
 
         if email is not None:
-            email = email.strip()
+            email = _normalize_text(email)
             if not email:
                 return jsonify({"error": "email cannot be empty"}), 400
             user.email = email
@@ -82,31 +151,75 @@ def user_detail(user_id):
 
 @users_bp.route("/users/bulk", methods=["POST"])
 def load_users_bulk():
-    data = request.get_json(silent=True) or {}
-    file_name = data.get("file", "users.csv")
-    row_count = int(data.get("row_count", 0))
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "request body must be a JSON object"}), 400
 
-    if row_count < 0:
+    file_name = _normalize_text(data.get("file")) or "users.csv"
+    row_count = _parse_int(data.get("row_count"), default=None)
+
+    if row_count is not None and row_count < 0:
         return jsonify({"error": "row_count must be non-negative"}), 400
 
-    created_count = 0
+    csv_rows, err = _load_csv_users(file_name, limit=row_count)
+    if csv_rows is None:
+        return jsonify({"error": err}), 404
 
-    # start after current max id-ish naming to avoid collisions across reruns
-    existing_count = User.select().count()
+    requested_count = row_count if row_count is not None else len(csv_rows)
 
-    for i in range(1, row_count + 1):
-        username = f"bulk_user_{existing_count + i}"
-        email = f"bulk_user_{existing_count + i}@example.com"
+    if not csv_rows:
+        return jsonify({
+            "message": "bulk load complete",
+            "file": file_name,
+            "row_count": requested_count,
+            "created_count": 0,
+            "imported_count": 0,
+        }), 201
 
-        try:
-            User.create(username=username, email=email)
-            created_count += 1
-        except IntegrityError:
-            pass
+    existing_usernames = {
+        row.username for row in User.select(User.username)
+    }
+    existing_emails = {
+        row.email for row in User.select(User.email)
+    }
+
+    rows_to_insert = []
+    batch_usernames = set()
+    batch_emails = set()
+
+    for row in csv_rows:
+        username = row["username"]
+        email = row["email"]
+
+        if username in existing_usernames or email in existing_emails:
+            continue
+        if username in batch_usernames or email in batch_emails:
+            continue
+
+        rows_to_insert.append({
+            "username": username,
+            "email": email,
+        })
+        batch_usernames.add(username)
+        batch_emails.add(email)
+
+    imported_count = 0
+
+    if rows_to_insert:
+        before_count = User.select().count()
+
+        with db.atomic():
+            for i in range(0, len(rows_to_insert), 100):
+                chunk = rows_to_insert[i:i + 100]
+                User.insert_many(chunk).on_conflict_ignore().execute()
+
+        after_count = User.select().count()
+        imported_count = max(after_count - before_count, 0)
 
     return jsonify({
         "message": "bulk load complete",
         "file": file_name,
-        "row_count": row_count,
-        "created_count": created_count,
+        "row_count": requested_count,
+        "created_count": imported_count,
+        "imported_count": imported_count,
     }), 201
