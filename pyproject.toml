@@ -10,4 +10,6 @@ dependencies = [
     "pytest>=9.0.2",
     "pytest-cov>=7.1.0",
     "python-dotenv>=1.0",
+    "redis>=7.4.0",
+    "gunicorn>=23.0.0",
 ]

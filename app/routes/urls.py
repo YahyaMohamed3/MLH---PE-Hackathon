@@ -1,8 +1,10 @@
 import datetime
 import json
+import os
 import random
 import string
 
+import redis
 from flask import Blueprint, jsonify, redirect, request
 
 from app.models.event import Event
@@ -10,6 +12,47 @@ from app.models.url import URL
 from app.models.user import User
 
 urls_bp = Blueprint("urls", __name__)
+
+# Redis client
+try:
+    cache = redis.Redis(
+        host=os.environ.get("REDIS_HOST", "redis-cache"),
+        port=int(os.environ.get("REDIS_PORT", 6379)),
+        decode_responses=True,
+        socket_connect_timeout=2,
+    )
+    cache.ping()
+except Exception:
+    cache = None
+
+
+def get_cache(key):
+    if not cache:
+        return None
+    try:
+        val = cache.get(key)
+        return json.loads(val) if val else None
+    except Exception:
+        return None
+
+
+def set_cache(key, value, ttl=60):
+    if not cache:
+        return
+    try:
+        cache.setex(key, ttl, json.dumps(value))
+    except Exception:
+        pass
+
+
+def delete_cache(*keys):
+    if not cache:
+        return
+    try:
+        for key in keys:
+            cache.delete(key)
+    except Exception:
+        pass
 
 
 def generate_short_code(length=6):
@@ -39,7 +82,6 @@ def shorten_url():
     if not is_valid_url(original_url):
         return jsonify({"error": "original_url must start with http:// or https://"}), 400
 
-    # Validate user if provided
     if user_id:
         try:
             User.get_by_id(int(user_id))
@@ -65,6 +107,8 @@ def shorten_url():
         details=json.dumps({"short_code": short_code, "original_url": original_url}),
     )
 
+    delete_cache("urls:list")
+
     return jsonify({
         "id": url.id,
         "short_code": url.short_code,
@@ -79,6 +123,24 @@ def shorten_url():
 def redirect_url(short_code):
     if not short_code or len(short_code) > 20:
         return jsonify({"error": "Invalid short code"}), 400
+
+    cached = get_cache(f"url:{short_code}")
+    if cached:
+        if not cached["is_active"]:
+            return jsonify({"error": "This link has been deactivated"}), 410
+        URL.update(
+            click_count=URL.click_count + 1,
+            updated_at=datetime.datetime.now()
+        ).where(URL.short_code == short_code).execute()
+        Event.create(
+            url_id=cached["id"],
+            user_id=None,
+            event_type="clicked",
+            timestamp=datetime.datetime.now(),
+            details=json.dumps({"short_code": short_code, "source": "cache"}),
+        )
+        return redirect(cached["original_url"], code=302)
+
     try:
         url = URL.get(URL.short_code == short_code)
     except URL.DoesNotExist:
@@ -86,6 +148,12 @@ def redirect_url(short_code):
 
     if not url.is_active:
         return jsonify({"error": "This link has been deactivated"}), 410
+
+    set_cache(f"url:{short_code}", {
+        "id": url.id,
+        "original_url": url.original_url,
+        "is_active": url.is_active,
+    }, ttl=300)
 
     URL.update(
         click_count=URL.click_count + 1,
@@ -105,8 +173,12 @@ def redirect_url(short_code):
 
 @urls_bp.route("/urls", methods=["GET"])
 def list_urls():
+    cached = get_cache("urls:list")
+    if cached:
+        return jsonify(cached)
+
     urls = URL.select().order_by(URL.created_at.desc()).limit(100)
-    return jsonify([{
+    result = [{
         "id": u.id,
         "short_code": u.short_code,
         "original_url": u.original_url,
@@ -114,7 +186,10 @@ def list_urls():
         "is_active": u.is_active,
         "click_count": u.click_count,
         "created_at": u.created_at.isoformat(),
-    } for u in urls])
+    } for u in urls]
+
+    set_cache("urls:list", result, ttl=120)
+    return jsonify(result)
 
 
 @urls_bp.route("/urls/<int:url_id>", methods=["GET"])
@@ -155,6 +230,8 @@ def deactivate_url(url_id):
         timestamp=datetime.datetime.now(),
         details=json.dumps({"short_code": url.short_code}),
     )
+
+    delete_cache(f"url:{url.short_code}", "urls:list")
 
     return jsonify({"message": f"URL {url_id} deactivated"}), 200
 

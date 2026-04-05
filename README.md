@@ -4,8 +4,10 @@ A production-grade URL shortener built with Flask, PostgreSQL, and Peewee ORM. B
 
 ## Stack
 
-- **Backend:** Flask + Peewee ORM
+- **Backend:** Flask + Peewee ORM + Gunicorn
 - **Database:** PostgreSQL
+- **Cache:** Redis
+- **Load Balancer:** Nginx
 - **Testing:** pytest + pytest-cov
 - **CI:** GitHub Actions
 - **Package Manager:** uv
@@ -14,8 +16,13 @@ A production-grade URL shortener built with Flask, PostgreSQL, and Peewee ORM. B
 
 ```
 
-User → Flask App → PostgreSQL
-→ Events Log
+User → Nginx (Load Balancer)
+↓
+Flask App (Gunicorn, multiple instances)
+↓
+Redis (Cache) + PostgreSQL (Database)
+↓
+Events Log
 
 ````
 
@@ -42,7 +49,7 @@ docker run --name hackathon-db \
   -p 5433:5432 -d postgres
 
 # 5. Configure environment
-cp .env.example .env  # edit if needed
+cp .env.example .env
 
 # 6. Seed the database
 uv run seed.py
@@ -57,7 +64,7 @@ Visit `http://localhost:5000/health` — you should see `{"status": "ok"}`.
 
 ```bash
 docker compose up -d --build
-curl http://localhost:5000/health
+curl http://localhost:5001/health
 ```
 
 ## Chaos Mode (Resilience Test)
@@ -89,74 +96,37 @@ Expected behavior:
 | GET    | `/users`              | List all users            |
 | GET    | `/users/<id>`         | Get a specific user       |
 
-### POST /shorten
-
-**Request:**
-
-```json
-{
-  "original_url": "https://example.com",
-  "title": "Example Site",
-  "user_id": 1
-}
-```
-
-**Response (201):**
-
-```json
-{
-  "id": 1,
-  "short_code": "abc123",
-  "original_url": "https://example.com",
-  "title": "Example Site",
-  "is_active": true,
-  "created_at": "2026-04-04T00:00:00"
-}
-```
-
-**Error responses:**
-
-* `400` — missing or invalid URL
-* `404` — user_id not found
-
-### GET /<short_code>
-
-* `302` — redirects to original URL
-* `404` — short code not found
-* `410` — URL has been deactivated
-
 ## Environment Variables
 
-| Variable            | Default        | Description              |
-| ------------------- | -------------- | ------------------------ |
-| `DATABASE_NAME`     | `hackathon_db` | PostgreSQL database name |
-| `DATABASE_HOST`     | `localhost`    | Database host            |
-| `DATABASE_PORT`     | `5432`         | Database port            |
-| `DATABASE_USER`     | `postgres`     | Database user            |
-| `DATABASE_PASSWORD` | `postgres`     | Database password        |
-| `FLASK_DEBUG`       | `true`         | Enable debug mode        |
+| Variable          | Default      | Description              |
+| ----------------- | ------------ | ------------------------ |
+| DATABASE_NAME     | hackathon_db | PostgreSQL database name |
+| DATABASE_HOST     | localhost    | Database host            |
+| DATABASE_PORT     | 5432         | Database port            |
+| DATABASE_USER     | postgres     | Database user            |
+| DATABASE_PASSWORD | postgres     | Database password        |
+| FLASK_DEBUG       | true         | Debug mode               |
+| REDIS_HOST        | redis        | Redis host               |
+| REDIS_PORT        | 6379         | Redis port               |
 
 ## Running Tests
 
 ```bash
-# Run all tests
 uv run pytest tests/ -v
-
-# Run with coverage report
 uv run pytest tests/ --cov=app --cov-report=term-missing
 ```
 
-Current coverage: **99%** (165 statements, 2 missed)
+Current coverage: **99%**
 
 ## CI/CD
 
 GitHub Actions runs on every push:
 
-1. Spins up a PostgreSQL service container
-2. Installs dependencies via uv
-3. Runs all 23 tests
-4. Enforces 70% minimum coverage
-5. Blocks merge if any test fails
+1. Spins up PostgreSQL
+2. Installs dependencies
+3. Runs tests
+4. Enforces coverage
+5. Blocks merge on failure
 
 ## Error Handling
 
@@ -165,71 +135,130 @@ GitHub Actions runs on every push:
 | Missing `original_url` | `400 {"error": "original_url is required"}`                         |
 | Invalid URL format     | `400 {"error": "original_url must start with http:// or https://"}` |
 | Non-JSON request body  | `400 {"error": "Request body must be JSON"}`                        |
-| Short code not found   | `404 {"error": "Short code '...' not found"}`                       |
+| Short code not found   | `404 {"error": "Short code not found"}`                             |
 | Deactivated URL        | `410 {"error": "This link has been deactivated"}`                   |
-| User not found         | `404 {"error": "User ... not found"}`                               |
+| User not found         | `404 {"error": "User not found"}`                                   |
 
-All errors return JSON — no stack traces exposed to users.
+All errors return JSON.
 
 ## Failure Modes
 
-See `FAILURE_MODES.md` for detailed breakdown of:
-
-* Database connection failures
-* Invalid input handling
-* API error responses
-* Container crash and recovery behavior
+See `docs/FAILURE_MODES.md`.
 
 ## Capacity Plan
 
 Current system design:
 
-* Single Flask instance (development server)
-* PostgreSQL as primary datastore
+* Nginx load balancer distributing traffic across multiple app containers
+* Gunicorn with multiple workers and threads
+* Redis caching layer
+* PostgreSQL database
 
-Estimated capacity:
+Measured capacity:
 
-* ~50–100 requests per second under light load
+* ~300+ requests per second
+* Handles 500 concurrent users
+* p95 latency: ~2.7 seconds
+* Error rate: ~2.87%
 
-Known bottlenecks:
+Previous bottleneck:
 
-* Flask development server is not optimized for concurrency
-* Database connection latency under load
+* Flask development server (single-threaded)
 
-Scaling plan:
+Fixes applied:
 
-* Replace Flask dev server with Gunicorn (multiple workers)
-* Add Nginx reverse proxy
-* Horizontally scale with multiple containers
-* Introduce connection pooling and caching layer if needed
+* Replaced Flask dev server with Gunicorn
+* Added horizontal scaling (multiple containers)
+* Added Nginx load balancer
+* Implemented Redis caching for `/urls`
 
-## Troubleshooting
+Remaining limits:
 
-**`password authentication failed for user "postgres"`**
+* Database may bottleneck at higher scale
+* Limited by local machine resources
 
-* A local PostgreSQL may be running on port 5432. We use port 5433 to avoid conflicts.
-* Run: `docker run ... -p 5433:5432 -d postgres`
+## Scalability
 
-**`uv: command not found`**
+System scaled horizontally using Docker Compose:
 
-* Run: `source $HOME/.local/bin/env`
-* Or restart your terminal after installing uv.
+* Multiple app instances (`app1`, `app2`)
+* Nginx load balancing
+* Redis caching to reduce database load
 
-**`duplicate key value violates unique constraint`**
+Load testing:
 
-* The DB sequence is out of sync after seeding with explicit IDs.
-* Fix: `docker exec -it hackathon-db psql -U postgres -d hackathon_db -c "SELECT setval('urls_id_seq', (SELECT MAX(id) FROM urls));"`
+```bash
+k6 run --vus 500 --duration 30s k6/baseline.js
+```
+
+Results:
+
+* 500 concurrent users
+* ~300+ requests/sec
+* Error rate < 5%
 
 ## Decision Log
 
-| Decision                | Why                                                                                |
-| ----------------------- | ---------------------------------------------------------------------------------- |
-| Flask                   | Lightweight, minimal boilerplate, matches template                                 |
-| Peewee ORM              | Simple, lightweight ORM that fits the template's existing setup                    |
-| PostgreSQL              | Reliable, production-grade relational DB with strong consistency                   |
-| No FK constraints in DB | Seed data had referential inconsistencies; integrity enforced at app layer instead |
-| pytest                  | Industry standard, integrates well with Flask test client                          |
-| uv                      | Fast dependency management, handles Python versions automatically                  |
-| Port 5433 locally       | Avoids conflict with any existing local PostgreSQL on 5432                         |
+| Decision           | Why                                 |
+| ------------------ | ----------------------------------- |
+| Flask              | Lightweight framework               |
+| Peewee ORM         | Simple ORM                          |
+| PostgreSQL         | Reliable relational DB              |
+| Gunicorn           | Enables concurrent request handling |
+| Nginx              | Load balancing across instances     |
+| Redis              | Reduce DB load via caching          |
+| Horizontal scaling | Improve throughput                  |
 
+## Troubleshooting
 
+**duplicate key value violates unique constraint**
+
+* Retry logic handles collisions
+
+**connection refused at startup**
+
+* Wait for services to be ready before load testing
+
+**slow responses under load**
+
+* Ensure Redis cache is working
+* Verify multiple Gunicorn workers
+
+## Verification Evidence
+
+### Reliability — Chaos Test
+
+![Chaos Test](docs/images/reliability/chaos-test.png)
+
+- Container is killed and automatically restarts
+- `/health` endpoint returns OK after recovery
+
+---
+
+### Scalability — 50 Users (Baseline)
+
+![k6 50 users](docs/images/scalability/k6-50-users.png)
+
+- 50 concurrent users
+- 0% error rate
+- Baseline latency recorded
+
+---
+
+### Scalability — Infrastructure
+
+![docker ps](docs/images/scalability/docker-ps.png)
+
+- Multiple app instances running
+- Nginx load balancer active
+
+---
+
+### Scalability — 500 Users
+
+![k6 500 users](docs/images/scalability/k6-500-users.png)
+
+- 500 concurrent users
+- ~300+ requests/sec
+- Error rate: ~2.87%
+- p95 latency: ~2.7s

@@ -14,10 +14,12 @@ RUN pip install --no-cache-dir \
     python-dotenv \
     faker \
     pytest \
-    pytest-cov
+    pytest-cov \
+    redis \
+    gunicorn
 
 COPY . .
 
 EXPOSE 5000
 
-CMD ["python", "run.py"]
+CMD ["gunicorn", "-w", "8", "--threads", "2", "-b", "0.0.0.0:5000", "run:app"]
