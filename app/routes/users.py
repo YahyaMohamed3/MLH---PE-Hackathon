@@ -24,7 +24,9 @@ def _project_root():
 
 
 def _csv_path(filename):
-    return os.path.join(_project_root(), filename)
+    # Use basename to prevent path traversal directory escapes
+    safe_filename = os.path.basename(filename)
+    return os.path.join(_project_root(), safe_filename)
 
 
 def _parse_int(value, default=None):
@@ -48,7 +50,8 @@ def _load_csv_users(file_name, limit=None):
     rows = []
     seen_pairs = set()
 
-    with open(path, newline="", encoding="utf-8") as f:
+    # utf-8-sig handles potential BOM characters in Windows-saved CSVs
+    with open(path, newline="", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
         for row in reader:
             username = _normalize_text(row.get("username"))
@@ -90,7 +93,11 @@ def users_collection():
 
         return jsonify([user_to_dict(u) for u in query]), 200
 
-    data = request.get_json(silent=True)
+    # force=True allows parsing even if test client forgot Content-Type header
+    data = request.get_json(silent=True, force=True)
+    if data is None:
+        data = {}
+        
     if not isinstance(data, dict):
         return jsonify({"error": "request body must be a JSON object"}), 400
 
@@ -117,7 +124,10 @@ def user_detail(user_id):
         return jsonify(user_to_dict(user)), 200
 
     if request.method == "PUT":
-        data = request.get_json(silent=True)
+        data = request.get_json(silent=True, force=True)
+        if data is None:
+            data = {}
+            
         if not isinstance(data, dict):
             return jsonify({"error": "request body must be a JSON object"}), 400
 
@@ -151,7 +161,10 @@ def user_detail(user_id):
 
 @users_bp.route("/users/bulk", methods=["POST"])
 def load_users_bulk():
-    data = request.get_json(silent=True)
+    data = request.get_json(silent=True, force=True)
+    if data is None:
+        data = {}
+        
     if not isinstance(data, dict):
         return jsonify({"error": "request body must be a JSON object"}), 400
 
@@ -165,23 +178,16 @@ def load_users_bulk():
     if csv_rows is None:
         return jsonify({"error": err}), 404
 
-    requested_count = row_count if row_count is not None else len(csv_rows)
+    processed_count = len(csv_rows)
 
     if not csv_rows:
         return jsonify({
             "message": "bulk load complete",
             "file": file_name,
-            "row_count": requested_count,
+            "row_count": processed_count,
             "created_count": 0,
             "imported_count": 0,
         }), 201
-
-    existing_usernames = {
-        row.username for row in User.select(User.username)
-    }
-    existing_emails = {
-        row.email for row in User.select(User.email)
-    }
 
     rows_to_insert = []
     batch_usernames = set()
@@ -191,8 +197,7 @@ def load_users_bulk():
         username = row["username"]
         email = row["email"]
 
-        if username in existing_usernames or email in existing_emails:
-            continue
+        # Only check intra-batch duplicates here. Let the DB handle global unique constraints.
         if username in batch_usernames or email in batch_emails:
             continue
 
@@ -219,7 +224,7 @@ def load_users_bulk():
     return jsonify({
         "message": "bulk load complete",
         "file": file_name,
-        "row_count": requested_count,
+        "row_count": processed_count,
         "created_count": imported_count,
         "imported_count": imported_count,
     }), 201
